@@ -5,6 +5,7 @@ import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Card from '../components/ui/Card';
 import Footer from '../components/ui/Footer';
+import authAPI from '../services/authAPI';
 
 const Login = ({ onLogin }) => {
   const [formData, setFormData] = useState({
@@ -29,20 +30,34 @@ const Login = ({ onLogin }) => {
     setLoading(true);
     setError('');
 
-    // Simulate API call
-    setTimeout(() => {
-      const mockUser = {
-        id: '1',
-        name: 'John Doe',
+    try {
+      const response = await authAPI.login({
         email: formData.email,
-        role: 'club_admin',
-        club: 'Tech Club'
-      };
-      
-      onLogin(mockUser);
+        password: formData.password
+      });
+
+      if (response.success && response.data) {
+        const userData = response.data.user;
+        const token = response.data.token;
+        
+        // Store token and user
+        if (token) {
+          localStorage.setItem('token', token);
+        }
+        if (userData) {
+          localStorage.setItem('user', JSON.stringify(userData));
+          onLogin(userData);
+        }
+        
+        navigate('/dashboard');
+      } else {
+        setError(response.error || response.message || 'Login failed. Please try again.');
+      }
+    } catch (err) {
+      setError(err.message || 'Login failed. Please check your credentials and try again.');
+    } finally {
       setLoading(false);
-      navigate('/dashboard');
-    }, 1000);
+    }
   };
 
   return (

@@ -1,51 +1,53 @@
-import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Plus, Eye, Edit, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Calendar, Clock, Plus, Eye, Edit, Trash2, Loader2 } from 'lucide-react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Footer from '../components/ui/Footer';
+import bookingAPI from '../services/bookingAPI';
 
 const Bookings = ({ user }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const bookings = [
-    {
-      id: 1,
-      eventName: 'Tech Workshop',
-      venue: 'Main Auditorium',
-      date: '2024-03-15',
-      startTime: '09:00 AM',
-      endTime: '12:00 PM',
-      status: 'approved',
-      club: 'Tech Club',
-      participants: 200,
-      userId: user?.id || user?._id || '1' // Current user's booking
-    },
-    {
-      id: 2,
-      eventName: 'Cultural Fest',
-      venue: 'Outdoor Stage',
-      date: '2024-03-20',
-      startTime: '06:00 PM',
-      endTime: '09:00 PM',
-      status: 'pending',
-      club: 'Cultural Club',
-      participants: 500,
-      userId: '2' // Different user's booking
-    },
-    {
-      id: 3,
-      eventName: 'Sports Meet',
-      venue: 'Sports Complex',
-      date: '2024-03-25',
-      startTime: '04:00 PM',
-      endTime: '07:00 PM',
-      status: 'pending',
-      club: 'Sports Club',
-      participants: 300,
-      userId: user?.id || user?._id || '1' // Current user's booking
+  useEffect(() => {
+    const fetchBookings = async () => {
+      try {
+        setLoading(true);
+        setError('');
+        
+        // Show success message if redirected from new booking
+        if (location.state?.message) {
+          // You could show a toast notification here
+          console.log(location.state.message);
+        }
+
+        // Fetch bookings based on user role
+        const response = user?.role === 'super_admin' 
+          ? await bookingAPI.getAllBookings({ limit: 100 })
+          : await bookingAPI.getMyBookings({ limit: 100 });
+
+        if (response.success && response.data) {
+          const bookingsData = response.data.bookings || response.data || [];
+          setBookings(bookingsData);
+        } else {
+          setError('Failed to load bookings. Please try again.');
+        }
+      } catch (err) {
+        console.error('Error fetching bookings:', err);
+        setError(err.message || 'Failed to load bookings. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user) {
+      fetchBookings();
     }
-  ];
+  }, [user, location.state]);
 
   // Helper function to check if user can edit/delete a booking
   const canEditDelete = (booking) => {
@@ -56,10 +58,39 @@ const Bookings = ({ user }) => {
     
     // Check if current user is the owner
     const currentUserId = user?.id || user?._id;
-    const bookingUserId = booking.userId || booking.user?._id || booking.user?.id;
+    const bookingUserId = booking.user?._id || booking.user?.id || booking.userId;
     
     return currentUserId && bookingUserId && currentUserId === bookingUserId;
   };
+
+  const handleDelete = async (bookingId) => {
+    if (!window.confirm('Are you sure you want to delete this booking?')) {
+      return;
+    }
+
+    try {
+      await bookingAPI.deleteBooking(bookingId);
+      // Refresh bookings list
+      setBookings(bookings.filter(b => (b._id || b.id) !== bookingId));
+    } catch (err) {
+      console.error('Error deleting booking:', err);
+      alert(err.message || 'Failed to delete booking. Please try again.');
+    }
+  };
+
+  // Format booking data for display
+  const formatBookings = bookings.map(booking => ({
+    id: booking._id || booking.id,
+    eventName: booking.eventName || booking.event,
+    venue: booking.slot?.venue || booking.venue,
+    date: booking.slot?.date || booking.date,
+    startTime: booking.slot?.startTime || booking.startTime,
+    endTime: booking.slot?.endTime || booking.endTime,
+    status: booking.status,
+    club: booking.club,
+    participants: booking.expectedParticipants || booking.participants,
+    userId: booking.user?._id || booking.user?.id || booking.userId
+  }));
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -98,9 +129,34 @@ const Bookings = ({ user }) => {
           )}
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded-lg">
+            <p className="text-red-700 text-sm font-medium">{error}</p>
+          </div>
+        )}
+
         {/* Bookings Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {bookings.map((booking, index) => (
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+          </div>
+        ) : formatBookings.length === 0 ? (
+          <Card className="p-12 text-center">
+            <p className="text-xl text-gray-500 mb-4">No bookings found.</p>
+            {user?.role !== 'user' && (
+              <Button
+                variant="primary"
+                icon={Plus}
+                onClick={() => navigate('/bookings/new')}
+              >
+                Create Your First Booking
+              </Button>
+            )}
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {formatBookings.map((booking, index) => (
             <Card
               key={booking.id}
               className="p-6 animate-slideIn"
@@ -128,11 +184,13 @@ const Bookings = ({ user }) => {
                   <div>
                     <p className="text-xs text-gray-500 font-medium">Date</p>
                     <p className="text-sm font-semibold">
-                      {new Date(booking.date).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric'
-                      })}
+                      {booking.date 
+                        ? new Date(booking.date).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })
+                        : 'N/A'}
                     </p>
                   </div>
                 </div>
@@ -144,7 +202,7 @@ const Bookings = ({ user }) => {
                   <div>
                     <p className="text-xs text-gray-500 font-medium">Time</p>
                     <p className="text-sm font-semibold">
-                      {booking.startTime} - {booking.endTime}
+                      {booking.startTime || 'N/A'} - {booking.endTime || 'N/A'}
                     </p>
                   </div>
                 </div>
@@ -184,7 +242,7 @@ const Bookings = ({ user }) => {
                       variant="ghost"
                       size="sm"
                       icon={Trash2}
-                      onClick={() => console.log('Delete booking:', booking.id)}
+                      onClick={() => handleDelete(booking.id)}
                       className="text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
                       Delete
@@ -193,8 +251,9 @@ const Bookings = ({ user }) => {
                 )}
               </div>
             </Card>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
       <div className='w-full mt-4'>
         <Footer />

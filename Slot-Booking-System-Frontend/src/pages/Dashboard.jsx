@@ -1,72 +1,102 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Clock, CheckCircle, XCircle, TrendingUp, Users } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, XCircle, TrendingUp, Users, Loader2 } from 'lucide-react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Footer from '../components/ui/Footer';
+import bookingAPI from '../services/bookingAPI';
 
 const Dashboard = ({ user }) => {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [bookings, setBookings] = useState([]);
+  const [stats, setStats] = useState({
+    total: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0
+  });
 
-  const stats = [
+  useEffect(() => {
+    const fetchBookings = async () => {
+      try {
+        setLoading(true);
+        // Fetch user's bookings or all bookings if super admin
+        const response = user?.role === 'super_admin' 
+          ? await bookingAPI.getAllBookings({ limit: 100 })
+          : await bookingAPI.getMyBookings({ limit: 100 });
+
+        if (response.success && response.data) {
+          const bookingsData = response.data.bookings || response.data || [];
+          setBookings(bookingsData);
+
+          // Calculate stats
+          const total = bookingsData.length;
+          const pending = bookingsData.filter(b => b.status === 'pending').length;
+          const approved = bookingsData.filter(b => b.status === 'approved').length;
+          const rejected = bookingsData.filter(b => b.status === 'rejected').length;
+
+          setStats({ total, pending, approved, rejected });
+        }
+      } catch (error) {
+        console.error('Error fetching bookings:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user) {
+      fetchBookings();
+    }
+  }, [user]);
+
+  // Get recent bookings (last 3)
+  const recentBookings = bookings
+    .sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date))
+    .slice(0, 3)
+    .map(booking => ({
+      id: booking._id || booking.id,
+      event: booking.eventName || booking.event,
+      venue: booking.slot?.venue || booking.venue,
+      date: booking.slot?.date || booking.date,
+      time: booking.slot 
+        ? `${booking.slot.startTime} - ${booking.slot.endTime}`
+        : booking.time || booking.startTime,
+      status: booking.status
+    }));
+
+  const statsData = [
     {
       title: 'Total Bookings',
-      value: '24',
-      change: '+12%',
+      value: stats.total.toString(),
+      change: '',
       icon: Calendar,
       color: 'from-purple-500 to-purple-600',
       bgColor: 'bg-purple-50'
     },
     {
       title: 'Pending Approvals',
-      value: '5',
-      change: '+3',
+      value: stats.pending.toString(),
+      change: '',
       icon: Clock,
       color: 'from-yellow-500 to-yellow-600',
       bgColor: 'bg-yellow-50'
     },
     {
       title: 'Approved',
-      value: '18',
-      change: '+8',
+      value: stats.approved.toString(),
+      change: '',
       icon: CheckCircle,
       color: 'from-green-500 to-green-600',
       bgColor: 'bg-green-50'
     },
     {
       title: 'Rejected',
-      value: '1',
-      change: '-50%',
+      value: stats.rejected.toString(),
+      change: '',
       icon: XCircle,
       color: 'from-red-500 to-red-600',
       bgColor: 'bg-red-50'
-    }
-  ];
-
-  const recentBookings = [
-    {
-      id: 1,
-      event: 'Tech Workshop',
-      venue: 'Main Auditorium',
-      date: '2024-03-15',
-      time: '09:00 AM',
-      status: 'approved'
-    },
-    {
-      id: 2,
-      event: 'Cultural Fest',
-      venue: 'Outdoor Stage',
-      date: '2024-03-20',
-      time: '06:00 PM',
-      status: 'pending'
-    },
-    {
-      id: 3,
-      event: 'Sports Meet',
-      venue: 'Sports Complex',
-      date: '2024-03-25',
-      time: '04:00 PM',
-      status: 'approved'
     }
   ];
 
@@ -98,7 +128,7 @@ const Dashboard = ({ user }) => {
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {stats.map((stat, index) => (
+          {statsData.map((stat, index) => (
             <Card
               key={index}
               className="p-6 animate-fadeIn"
@@ -110,12 +140,18 @@ const Dashboard = ({ user }) => {
                     {stat.title}
                   </p>
                   <h3 className="text-3xl font-bold text-gray-900 mb-2">
-                    {stat.value}
+                    {loading ? (
+                      <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+                    ) : (
+                      stat.value
+                    )}
                   </h3>
-                  <span className="inline-flex items-center gap-1 text-sm font-semibold text-green-600">
-                    <TrendingUp className="w-4 h-4" />
-                    {stat.change}
-                  </span>
+                  {stat.change && (
+                    <span className="inline-flex items-center gap-1 text-sm font-semibold text-green-600">
+                      <TrendingUp className="w-4 h-4" />
+                      {stat.change}
+                    </span>
+                  )}
                 </div>
                 <div className={`p-3 ${stat.bgColor} rounded-xl`}>
                   <stat.icon className={`w-6 h-6 bg-gradient-to-br ${stat.color} bg-clip-text text-transparent`} strokeWidth={2.5} />
@@ -140,7 +176,16 @@ const Dashboard = ({ user }) => {
             </div>
 
             <div className="space-y-4">
-              {recentBookings.map((booking, index) => (
+              {loading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+                </div>
+              ) : recentBookings.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p>No bookings yet. Create your first booking!</p>
+                </div>
+              ) : (
+                recentBookings.map((booking, index) => (
                 <div
                   key={booking.id}
                   className="p-4 border-2 border-gray-100 rounded-xl hover:border-purple-200 hover:shadow-md transition-all duration-300 animate-slideIn"
@@ -154,15 +199,17 @@ const Dashboard = ({ user }) => {
                       <div className="flex items-center gap-4 text-sm text-gray-600">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-4 h-4" />
-                          {new Date(booking.date).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric'
-                          })}
+                          {booking.date 
+                            ? new Date(booking.date).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
+                              })
+                            : 'N/A'}
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="w-4 h-4" />
-                          {booking.time}
+                          {booking.time || 'N/A'}
                         </span>
                       </div>
                       <p className="text-sm text-gray-500 mt-1">
@@ -174,7 +221,8 @@ const Dashboard = ({ user }) => {
                     </span>
                   </div>
                 </div>
-              ))}
+                ))
+              )}
             </div>
           </Card>
 
