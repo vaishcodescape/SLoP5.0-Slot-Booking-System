@@ -5,6 +5,7 @@ import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Card from '../components/ui/Card';
 import Footer from '../components/ui/Footer';
+import authAPI from '../services/authAPI';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -18,6 +19,7 @@ const Register = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -110,12 +112,47 @@ const Register = () => {
     }
 
     setLoading(true);
+    setSubmitError('');
 
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      // Prepare registration data
+      const registrationData = {
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        password: formData.password,
+        role: formData.role,
+      };
+
+      // Add club if role is club_admin
+      if (formData.role === 'club_admin') {
+        registrationData.club = formData.club.trim();
+      }
+
+      const response = await authAPI.register(registrationData);
+
+      if (response.success) {
+        // Registration successful, redirect to login
+        navigate('/login', { 
+          state: { message: 'Registration successful! Please login to continue.' } 
+        });
+      } else {
+        setSubmitError(response.error || response.message || 'Registration failed. Please try again.');
+      }
+    } catch (err) {
+      // Handle validation errors from backend
+      if (err.data && err.data.errors) {
+        const backendErrors = {};
+        err.data.errors.forEach(error => {
+          if (error.field) {
+            backendErrors[error.field] = error.message;
+          }
+        });
+        setErrors({ ...errors, ...backendErrors });
+      }
+      setSubmitError(err.message || 'Registration failed. Please try again.');
+    } finally {
       setLoading(false);
-      navigate('/login');
-    }, 1000);
+    }
   };
 
   const isFormValid = () => {
@@ -153,6 +190,12 @@ const Register = () => {
 
         {/* Form Card */}
         <Card className="p-8">
+          {submitError && (
+            <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded-lg animate-fadeIn">
+              <p className="text-red-700 text-sm font-medium">{submitError}</p>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <Input

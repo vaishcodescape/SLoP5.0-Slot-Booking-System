@@ -1,80 +1,47 @@
-import React, { useState } from 'react';
-import { Calendar, Clock, MapPin, Users, Search } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Calendar, Clock, MapPin, Users, Search, Loader2 } from 'lucide-react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Footer from '../components/ui/Footer';
+import slotAPI from '../services/slotAPI';
 
 const Slots = ({ user }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [slots, setSlots] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const slots = [
-    {
-      id: 1,
-      venue: 'Main Auditorium',
-      date: '2024-03-15',
-      startTime: '09:00 AM',
-      endTime: '12:00 PM',
-      location: 'Building A, Ground Floor',
-      capacity: 500,
-      status: 'available'
-    },
-    {
-      id: 2,
-      venue: 'Seminar Hall 1',
-      date: '2024-03-16',
-      startTime: '02:00 PM',
-      endTime: '05:00 PM',
-      location: 'Building B, 2nd Floor',
-      capacity: 100,
-      status: 'available'
-    },
-    {
-      id: 3,
-      venue: 'Conference Room',
-      date: '2024-03-17',
-      startTime: '10:00 AM',
-      endTime: '01:00 PM',
-      location: 'Building C, 3rd Floor',
-      capacity: 50,
-      status: 'booked'
-    },
-    {
-      id: 4,
-      venue: 'Sports Complex',
-      date: '2024-03-18',
-      startTime: '04:00 PM',
-      endTime: '07:00 PM',
-      location: 'Sports Wing',
-      capacity: 300,
-      status: 'available'
-    },
-    {
-      id: 5,
-      venue: 'Computer Lab',
-      date: '2024-03-19',
-      startTime: '11:00 AM',
-      endTime: '02:00 PM',
-      location: 'Building D, 1st Floor',
-      capacity: 60,
-      status: 'available'
-    },
-    {
-      id: 6,
-      venue: 'Outdoor Stage',
-      date: '2024-03-20',
-      startTime: '06:00 PM',
-      endTime: '09:00 PM',
-      location: 'Central Campus',
-      capacity: 1000,
-      status: 'available'
-    }
-  ];
+  useEffect(() => {
+    const fetchSlots = async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const response = await slotAPI.getAllSlots({ limit: 100 });
+        
+        if (response.success && response.data) {
+          const slotsData = response.data.slots || response.data || [];
+          setSlots(slotsData);
+        } else {
+          setError('Failed to load slots. Please try again.');
+        }
+      } catch (err) {
+        console.error('Error fetching slots:', err);
+        setError(err.message || 'Failed to load slots. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSlots();
+  }, []);
 
   const filteredSlots = slots.filter(slot => {
-    const matchesSearch = slot.venue.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         slot.location.toLowerCase().includes(searchTerm.toLowerCase());
+    const venue = slot.venue || '';
+    const location = slot.location || '';
+    const matchesSearch = venue.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         location.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = filterStatus === 'all' || slot.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
@@ -117,13 +84,24 @@ const Slots = ({ user }) => {
           </div>
         </Card>
 
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded-lg">
+            <p className="text-red-700 text-sm font-medium">{error}</p>
+          </div>
+        )}
+
         {/* Results Count */}
         <p className="text-gray-700 font-semibold mb-6">
-          Showing {filteredSlots.length} slot{filteredSlots.length !== 1 ? 's' : ''}
+          {loading ? 'Loading slots...' : `Showing ${filteredSlots.length} slot${filteredSlots.length !== 1 ? 's' : ''}`}
         </p>
 
         {/* Slots Grid */}
-        {filteredSlots.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+          </div>
+        ) : filteredSlots.length === 0 ? (
           <Card className="p-12 text-center">
             <p className="text-xl text-gray-500">
               No slots found matching your criteria
@@ -131,74 +109,86 @@ const Slots = ({ user }) => {
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredSlots.map((slot, index) => (
-              <Card
-                key={slot.id}
-                gradient={slot.status === 'available'}
-                className="p-6 animate-fadeIn"
-                style={{ animationDelay: `${index * 50}ms` }}
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <h3 className="text-xl font-bold text-gray-900">
-                    {slot.venue}
-                  </h3>
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-bold capitalize ${
-                      slot.status === 'available'
-                        ? 'bg-gradient-to-r from-green-500 to-green-600 text-white'
-                        : 'bg-gray-200 text-gray-700'
-                    }`}
-                  >
-                    {slot.status}
-                  </span>
-                </div>
-
-                <div className="space-y-3 mb-6">
-                  <div className="flex items-center gap-3 text-gray-700">
-                    <Calendar className="w-5 h-5 text-gray-900" />
-                    <span className="text-sm font-medium">
-                      {new Date(slot.date).toLocaleDateString('en-US', {
-                        weekday: 'long',
-                        month: 'long',
-                        day: 'numeric',
-                        year: 'numeric'
-                      })}
+            {filteredSlots.map((slot, index) => {
+              const slotId = slot._id || slot.id;
+              const slotDate = slot.date ? new Date(slot.date).toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric'
+              }) : 'N/A';
+              const startTime = slot.startTime || 'N/A';
+              const endTime = slot.endTime || 'N/A';
+              
+              return (
+                <Card
+                  key={slotId}
+                  gradient={slot.status === 'available'}
+                  className="p-6 animate-fadeIn"
+                  style={{ animationDelay: `${index * 50}ms` }}
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <h3 className="text-xl font-bold text-gray-900">
+                      {slot.venue || 'Unknown Venue'}
+                    </h3>
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-bold capitalize ${
+                        slot.status === 'available'
+                          ? 'bg-gradient-to-r from-green-500 to-green-600 text-white'
+                          : 'bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      {slot.status || 'unknown'}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-3 text-gray-700">
-                    <Clock className="w-5 h-5 text-gray-900" />
-                    <span className="text-sm font-medium">
-                      {slot.startTime} - {slot.endTime}
-                    </span>
+                  <div className="space-y-3 mb-6">
+                    <div className="flex items-center gap-3 text-gray-700">
+                      <Calendar className="w-5 h-5 text-gray-900" />
+                      <span className="text-sm font-medium">
+                        {slotDate}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-gray-700">
+                      <Clock className="w-5 h-5 text-gray-900" />
+                      <span className="text-sm font-medium">
+                        {startTime} - {endTime}
+                      </span>
+                    </div>
+
+                    {slot.location && (
+                      <div className="flex items-center gap-3 text-gray-700">
+                        <MapPin className="w-5 h-5 text-gray-900" />
+                        <span className="text-sm font-medium">
+                          {slot.location}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-3 text-gray-700">
+                      <Users className="w-5 h-5 text-gray-900" />
+                      <span className="text-sm font-medium">
+                        Capacity: {slot.capacity || 'N/A'}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-3 text-gray-700">
-                    <MapPin className="w-5 h-5 text-gray-900" />
-                    <span className="text-sm font-medium">
-                      {slot.location}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-3 text-gray-700">
-                    <Users className="w-5 h-5 text-gray-900" />
-                    <span className="text-sm font-medium">
-                      Capacity: {slot.capacity}
-                    </span>
-                  </div>
-                </div>
-
-                {canBook && slot.status === 'available' && (
-                  <Button
-                    variant="primary"
-                    className="w-full"
-                    onClick={() => console.log('Book slot:', slot.id)}
-                  >
-                    Book Now
-                  </Button>
-                )}
-              </Card>
-            ))}
+                  {canBook && slot.status === 'available' && (
+                    <Button
+                      variant="primary"
+                      className="w-full"
+                      onClick={() => {
+                        // Navigate to new booking page with slot pre-selected
+                        window.location.href = `/bookings/new?slot=${slotId}`;
+                      }}
+                    >
+                      Book Now
+                    </Button>
+                  )}
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>

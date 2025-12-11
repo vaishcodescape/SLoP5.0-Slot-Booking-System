@@ -1,56 +1,52 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Calendar, Clock, MapPin, Users, ArrowLeft, Mail, Phone, User, Plus, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Calendar, Clock, MapPin, Users, ArrowLeft, Mail, Phone, User, Plus, X, Loader2 } from 'lucide-react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Footer from '../components/ui/Footer';
+import slotAPI from '../services/slotAPI';
+import bookingAPI from '../services/bookingAPI';
 
 const NewBooking = ({ user }) => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
+  const [loadingSlots, setLoadingSlots] = useState(true);
   const [error, setError] = useState('');
   const [requirementInput, setRequirementInput] = useState('');
+  const [availableSlots, setAvailableSlots] = useState([]);
 
-  // Mock available slots data
-  const availableSlots = [
-    {
-      _id: '1',
-      venue: 'Auditorium',
-      date: '2024-04-01',
-      startTime: '09:00',
-      endTime: '12:00',
-      capacity: 500,
-      status: 'available'
-    },
-    {
-      _id: '2',
-      venue: 'Seminar Hall',
-      date: '2024-04-02',
-      startTime: '14:00',
-      endTime: '17:00',
-      capacity: 200,
-      status: 'available'
-    },
-    {
-      _id: '3',
-      venue: 'Conference Room',
-      date: '2024-04-03',
-      startTime: '10:00',
-      endTime: '13:00',
-      capacity: 100,
-      status: 'available'
-    },
-    {
-      _id: '4',
-      venue: 'Library Hall',
-      date: '2024-04-04',
-      startTime: '15:00',
-      endTime: '18:00',
-      capacity: 150,
-      status: 'available'
-    }
-  ];
+  // Fetch available slots on component mount
+  useEffect(() => {
+    const fetchSlots = async () => {
+      try {
+        setLoadingSlots(true);
+        const response = await slotAPI.getAllSlots({ 
+          status: 'available',
+          limit: 100 
+        });
+        
+        if (response.success && response.data) {
+          const slotsData = response.data.slots || response.data || [];
+          setAvailableSlots(slotsData);
+          
+          // Pre-select slot if provided in URL
+          const slotId = searchParams.get('slot');
+          if (slotId && slotsData.find(s => (s._id || s.id) === slotId)) {
+            setFormData(prev => ({ ...prev, slot: slotId }));
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching slots:', err);
+        setError('Failed to load available slots. Please try again.');
+      } finally {
+        setLoadingSlots(false);
+      }
+    };
+
+    fetchSlots();
+  }, [searchParams]);
 
   const [formData, setFormData] = useState({
     slot: '',
@@ -67,7 +63,7 @@ const NewBooking = ({ user }) => {
     specialInstructions: ''
   });
 
-  const selectedSlot = availableSlots.find(s => s._id === formData.slot);
+  const selectedSlot = availableSlots.find(s => (s._id || s.id) === formData.slot);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -154,13 +150,46 @@ const NewBooking = ({ user }) => {
 
     setLoading(true);
 
-    // Simulate API call with mock data
-    setTimeout(() => {
+    try {
+      // Prepare booking data
+      const bookingData = {
+        slot: formData.slot,
+        eventName: formData.eventName.trim(),
+        eventDescription: formData.eventDescription.trim(),
+        expectedParticipants: parseInt(formData.expectedParticipants),
+        contactPerson: {
+          name: formData.contactPerson.name.trim(),
+          phone: formData.contactPerson.phone.trim(),
+          email: formData.contactPerson.email.trim()
+        }
+      };
+
+      // Add optional fields
+      if (formData.club) {
+        bookingData.club = formData.club;
+      }
+      if (formData.requirements && formData.requirements.length > 0) {
+        bookingData.requirements = formData.requirements;
+      }
+      if (formData.specialInstructions && formData.specialInstructions.trim()) {
+        bookingData.specialInstructions = formData.specialInstructions.trim();
+      }
+
+      const response = await bookingAPI.createBooking(bookingData);
+
+      if (response.success) {
+        navigate('/bookings', { 
+          state: { message: 'Booking created successfully! Your request is pending approval.' } 
+        });
+      } else {
+        setError(response.error || response.message || 'Failed to create booking. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error creating booking:', err);
+      setError(err.message || 'Failed to create booking. Please try again.');
+    } finally {
       setLoading(false);
-      navigate('/bookings', { 
-        state: { message: 'Booking created successfully! Your request is pending approval.' } 
-      });
-    }, 1000);
+    }
   };
 
   return (
@@ -200,33 +229,46 @@ const NewBooking = ({ user }) => {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Select Slot *
               </label>
-              <select
-                name="slot"
-                value={formData.slot}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:ring-4 focus:ring-purple-100 transition-all duration-200"
-                required
-              >
-                <option value="">-- Select a slot --</option>
-                {availableSlots.map((slot) => (
-                  <option key={slot._id} value={slot._id}>
-                    {new Date(slot.date).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric'
-                    })} - {slot.venue} ({slot.startTime} - {slot.endTime}) - Capacity: {slot.capacity}
-                  </option>
-                ))}
-              </select>
+              {loadingSlots ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                  <span className="ml-2 text-gray-600">Loading available slots...</span>
+                </div>
+              ) : (
+                <select
+                  name="slot"
+                  value={formData.slot}
+                  onChange={handleChange}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:ring-4 focus:ring-purple-100 transition-all duration-200"
+                  required
+                >
+                  <option value="">-- Select a slot --</option>
+                  {availableSlots.map((slot) => {
+                    const slotId = slot._id || slot.id;
+                    const slotDate = slot.date 
+                      ? new Date(slot.date).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })
+                      : 'N/A';
+                    return (
+                      <option key={slotId} value={slotId}>
+                        {slotDate} - {slot.venue || 'Unknown'} ({slot.startTime || 'N/A'} - {slot.endTime || 'N/A'}) - Capacity: {slot.capacity || 'N/A'}
+                      </option>
+                    );
+                  })}
+                </select>
+              )}
               
               {selectedSlot && (
                 <div className="mt-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
                   <p className="text-sm font-semibold text-blue-900 mb-2">Selected Slot Details:</p>
                   <div className="grid grid-cols-2 gap-2 text-sm text-blue-800">
-                    <div><span className="font-medium">Venue:</span> {selectedSlot.venue}</div>
-                    <div><span className="font-medium">Capacity:</span> {selectedSlot.capacity}</div>
-                    <div><span className="font-medium">Date:</span> {new Date(selectedSlot.date).toLocaleDateString()}</div>
-                    <div><span className="font-medium">Time:</span> {selectedSlot.startTime} - {selectedSlot.endTime}</div>
+                    <div><span className="font-medium">Venue:</span> {selectedSlot.venue || 'N/A'}</div>
+                    <div><span className="font-medium">Capacity:</span> {selectedSlot.capacity || 'N/A'}</div>
+                    <div><span className="font-medium">Date:</span> {selectedSlot.date ? new Date(selectedSlot.date).toLocaleDateString() : 'N/A'}</div>
+                    <div><span className="font-medium">Time:</span> {selectedSlot.startTime || 'N/A'} - {selectedSlot.endTime || 'N/A'}</div>
                   </div>
                 </div>
               )}

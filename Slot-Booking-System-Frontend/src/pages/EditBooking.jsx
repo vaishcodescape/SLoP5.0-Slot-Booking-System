@@ -1,91 +1,149 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Calendar, Clock, MapPin, Users, ArrowLeft, Shield } from 'lucide-react';
+import { Calendar, Clock, MapPin, Users, ArrowLeft, Shield, Loader2 } from 'lucide-react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Footer from '../components/ui/Footer';
+import bookingAPI from '../services/bookingAPI';
 
 const EditBooking = ({ user }) => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
+  const [error, setError] = useState('');
+  const [bookingData, setBookingData] = useState(null);
 
-  // Mock data - in real app, you'd fetch this by ID
-  const bookingData = {
-    id: parseInt(id),
-    eventName: 'Tech Workshop',
-    venue: 'Main Auditorium',
-    date: '2024-03-15',
-    startTime: '09:00 AM',
-    endTime: '12:00 PM',
-    status: 'approved',
-    club: 'Tech Club',
-    participants: 200,
-    description: 'A workshop on modern web technologies'
-  };
+  // Fetch booking data on mount
+  useEffect(() => {
+    const fetchBooking = async () => {
+      try {
+        setLoadingData(true);
+        const response = await bookingAPI.getBookingById(id);
+        
+        if (response.success && response.data) {
+          const booking = response.data.booking || response.data;
+          setBookingData(booking);
+          
+          // Initialize form data
+          setFormData({
+            eventName: booking.eventName || '',
+            eventDescription: booking.eventDescription || '',
+            expectedParticipants: booking.expectedParticipants || '',
+            contactPerson: booking.contactPerson || {
+              name: '',
+              phone: '',
+              email: ''
+            },
+            requirements: booking.requirements || [],
+            specialInstructions: booking.specialInstructions || '',
+            status: booking.status || 'pending'
+          });
+        } else {
+          setError('Failed to load booking. Please try again.');
+        }
+      } catch (err) {
+        console.error('Error fetching booking:', err);
+        setError(err.message || 'Failed to load booking. Please try again.');
+      } finally {
+        setLoadingData(false);
+      }
+    };
 
-  // Convert AM/PM time to 24-hour format for input
-  const convertTo24Hour = (timeStr) => {
-    const [time, modifier] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':');
-    
-    if (modifier === 'PM' && hours !== '12') {
-      hours = parseInt(hours, 10) + 12;
+    if (id) {
+      fetchBooking();
     }
-    if (modifier === 'AM' && hours === '12') {
-      hours = '00';
-    }
-    
-    return `${hours.padStart(2, '0')}:${minutes}`;
-  };
+  }, [id]);
 
   const [formData, setFormData] = useState({
-    eventName: bookingData.eventName,
-    venue: bookingData.venue,
-    date: bookingData.date,
-    startTime: convertTo24Hour(bookingData.startTime),
-    endTime: convertTo24Hour(bookingData.endTime),
-    participants: bookingData.participants,
-    description: bookingData.description,
-    status: bookingData.status
+    eventName: '',
+    eventDescription: '',
+    expectedParticipants: '',
+    contactPerson: {
+      name: '',
+      phone: '',
+      email: ''
+    },
+    requirements: [],
+    specialInstructions: '',
+    status: 'pending'
   });
 
-  const [loading, setLoading] = useState(false);
-
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+    const { name, value } = e.target;
+    
+    if (name.startsWith('contactPerson.')) {
+      const field = name.split('.')[1];
+      setFormData({
+        ...formData,
+        contactPerson: {
+          ...formData.contactPerson,
+          [field]: value
+        }
+      });
+    } else {
+      setFormData({
+        ...formData,
+        [name]: value
+      });
+    }
+    
+    setError('');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError('');
 
-    // Convert back to AM/PM format for display
-    const convertToAmPm = (timeStr) => {
-      const [hours, minutes] = timeStr.split(':');
-      const hour = parseInt(hours, 10);
-      const modifier = hour >= 12 ? 'PM' : 'AM';
-      const displayHour = hour % 12 || 12;
-      return `${displayHour}:${minutes} ${modifier}`;
-    };
+    try {
+      // Prepare update data
+      const updateData = {
+        eventName: formData.eventName.trim(),
+        eventDescription: formData.eventDescription.trim(),
+        expectedParticipants: parseInt(formData.expectedParticipants),
+        contactPerson: formData.contactPerson
+      };
 
-    const updatedBooking = {
-      ...formData,
-      startTime: convertToAmPm(formData.startTime),
-      endTime: convertToAmPm(formData.endTime),
-      club: bookingData.club
-    };
+      // Add optional fields
+      if (formData.requirements && formData.requirements.length > 0) {
+        updateData.requirements = formData.requirements;
+      }
+      if (formData.specialInstructions && formData.specialInstructions.trim()) {
+        updateData.specialInstructions = formData.specialInstructions.trim();
+      }
 
-    console.log('Updated booking:', updatedBooking);
+      // If super admin, allow status update
+      if (user?.role === 'super_admin' && formData.status) {
+        const response = await bookingAPI.updateBookingStatus(id, {
+          status: formData.status
+        });
+        
+        if (response.success) {
+          navigate('/bookings', {
+            state: { message: 'Booking updated successfully!' }
+          });
+          return;
+        }
+      }
 
-    // Simulate API call
-    setTimeout(() => {
+      // Regular update
+      const response = await bookingAPI.updateBooking(id, updateData);
+
+      if (response.success) {
+        navigate('/bookings', {
+          state: { message: 'Booking updated successfully!' }
+        });
+      } else {
+        setError(response.error || response.message || 'Failed to update booking. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error updating booking:', err);
+      setError(err.message || 'Failed to update booking. Please try again.');
+    } finally {
       setLoading(false);
-      navigate('/bookings');
-    }, 1000);
+    }
   };
 
   const getStatusColor = (status) => {
@@ -127,7 +185,18 @@ const EditBooking = ({ user }) => {
 
         {/* Edit Form */}
         <Card className="p-8">
-          <form onSubmit={handleSubmit} className="space-y-6">
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded-lg">
+              <p className="text-red-700 text-sm font-medium">{error}</p>
+            </div>
+          )}
+
+          {loadingData ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-6">
             <Input
               label="Event Name"
               type="text"
@@ -138,61 +207,72 @@ const EditBooking = ({ user }) => {
               required
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
-                label="Date"
-                type="date"
-                name="date"
-                icon={Calendar}
-                value={formData.date}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Event Description *
+              </label>
+              <textarea
+                name="eventDescription"
+                value={formData.eventDescription}
                 onChange={handleChange}
+                rows="4"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:ring-4 focus:ring-purple-100 transition-all duration-200 resize-none"
+                placeholder="Describe your event..."
                 required
+                maxLength={1000}
               />
+              <p className="text-xs text-gray-500 mt-1">{formData.eventDescription.length}/1000 characters</p>
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Expected Participants"
+              type="number"
+              name="expectedParticipants"
+              placeholder="Enter number of participants"
+              icon={Users}
+              value={formData.expectedParticipants}
+              onChange={handleChange}
+              min="1"
+              required
+            />
+
+            {/* Contact Person Section */}
+            <div className="pt-4 border-t border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Contact Person Details *</h3>
+              
+              <div className="space-y-4">
                 <Input
-                  label="Start Time"
-                  type="time"
-                  name="startTime"
-                  icon={Clock}
-                  value={formData.startTime}
+                  label="Name *"
+                  type="text"
+                  name="contactPerson.name"
+                  placeholder="Contact person name"
+                  value={formData.contactPerson.name}
                   onChange={handleChange}
                   required
                 />
+
                 <Input
-                  label="End Time"
-                  type="time"
-                  name="endTime"
-                  icon={Clock}
-                  value={formData.endTime}
+                  label="Phone *"
+                  type="tel"
+                  name="contactPerson.phone"
+                  placeholder="10-digit phone number"
+                  value={formData.contactPerson.phone}
+                  onChange={handleChange}
+                  required
+                  maxLength="10"
+                />
+
+                <Input
+                  label="Email *"
+                  type="email"
+                  name="contactPerson.email"
+                  placeholder="contact@example.com"
+                  value={formData.contactPerson.email}
                   onChange={handleChange}
                   required
                 />
               </div>
             </div>
-
-            <Input
-              label="Venue"
-              type="text"
-              name="venue"
-              placeholder="Enter venue"
-              icon={MapPin}
-              value={formData.venue}
-              onChange={handleChange}
-              required
-            />
-
-            <Input
-              label="Expected Participants"
-              type="number"
-              name="participants"
-              placeholder="Enter number of participants"
-              icon={Users}
-              value={formData.participants}
-              onChange={handleChange}
-              min="1"
-              required
-            />
 
             {/* Status Field - Only for super_admin */}
             {user?.role === 'super_admin' && (
@@ -238,16 +318,18 @@ const EditBooking = ({ user }) => {
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Event Description
+                Special Instructions (Optional)
               </label>
               <textarea
-                name="description"
-                value={formData.description}
+                name="specialInstructions"
+                value={formData.specialInstructions}
                 onChange={handleChange}
-                rows="4"
+                rows="3"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-purple-500 focus:ring-4 focus:ring-purple-100 transition-all duration-200 resize-none"
-                placeholder="Describe your event..."
+                placeholder="Any special instructions or notes..."
+                maxLength={500}
               />
+              <p className="text-xs text-gray-500 mt-1">{formData.specialInstructions.length}/500 characters</p>
             </div>
 
             <div className="flex gap-3 pt-4">
@@ -273,6 +355,7 @@ const EditBooking = ({ user }) => {
               </Button>
             </div>
           </form>
+          )}
         </Card>
       </div>
       <div className='w-full mt-4'>

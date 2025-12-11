@@ -13,6 +13,7 @@ import Privacy from './pages/Privacy';
 import Contact from './pages/Contact';
 import EditBooking from './pages/EditBooking';
 import NewBooking from './pages/NewBooking';
+import authAPI from './services/authAPI';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, user, requiredRole }) => {
@@ -39,20 +40,39 @@ function App() {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
+    // Load user and token from localStorage
     const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+    const storedToken = localStorage.getItem('token');
+    
+    if (storedUser && storedToken) {
+      try {
+        const userData = JSON.parse(storedUser);
+        setUser(userData);
+      } catch (error) {
+        console.error('Error parsing user data:', error);
+        // Clear invalid data
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+      }
     }
   }, []);
 
   const handleLogin = (userData) => {
     setUser(userData);
+    // User data and token are already stored by authAPI.login
+    // But we ensure it's stored here as well for consistency
     localStorage.setItem('user', JSON.stringify(userData));
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Call logout API to invalidate token on server
+    await authAPI.logout();
+    
+    // Clear local state
     setUser(null);
+    // authAPI.logout already clears localStorage, but ensure it's cleared
     localStorage.removeItem('user');
+    localStorage.removeItem('token');
   };
 
   return (
