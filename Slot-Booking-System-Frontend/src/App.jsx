@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Navbar from './components/ui/Navbar';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ForgotPassword from './pages/ForgotPassword';
 import Dashboard from './pages/Dashboard';
 import Slots from './pages/Slots';
 import Bookings from './pages/Bookings';
@@ -94,6 +95,14 @@ function App() {
             element={
               <PublicRoute user={user}>
                 <Register />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/forgot-password"
+            element={
+              <PublicRoute user={user}>
+                <ForgotPassword />
               </PublicRoute>
             }
           />
